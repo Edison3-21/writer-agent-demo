@@ -1,3 +1,7 @@
+import streamlit as st
+from writer_agent import WriterAgent
+import io
+from docx import Document
 """Streamlit 前端：单页完成 主题→大纲→正文→标题 写作流程。"""
 import streamlit as st
 from writer_agent import WriterAgent
@@ -70,3 +74,50 @@ else:
 
 if st.session_state.titles:
     st.markdown(st.session_state.titles)
+    # ---------- 文档导出功能 ----------
+if st.session_state.article and topic.strip():
+    st.markdown("---")
+    st.subheader("📥 导出文档")
+    
+    col1, col2 = st.columns(2)
+    
+    # 1. 导出 Markdown
+    with col1:
+        md_content = f"# {topic}\n\n{st.session_state.article}\n\n## 标题候选\n\n{st.session_state.titles}"
+        st.download_button(
+            label="下载 Markdown (.md)",
+            data=md_content,
+            file_name=f"{topic}.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
+        
+    # 2. 导出 Word
+    with col2:
+        # 在内存中创建 Word 文档
+        doc = Document()
+        doc.add_heading(topic, level=1)
+        
+        # 按段落写入正文
+        for paragraph in st.session_state.article.split('\n'):
+            if paragraph.strip():
+                doc.add_paragraph(paragraph)
+                
+        # 如果有标题候选，加在最后
+        if st.session_state.titles:
+            doc.add_heading("标题候选", level=2)
+            for title_line in st.session_state.titles.split('\n'):
+                if title_line.strip():
+                    doc.add_paragraph(title_line)
+                    
+        # 保存到内存中
+        bio = io.BytesIO()
+        doc.save(bio)
+        
+        st.download_button(
+            label="下载 Word (.docx)",
+            data=bio.getvalue(),
+            file_name=f"{topic}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True
+        )
