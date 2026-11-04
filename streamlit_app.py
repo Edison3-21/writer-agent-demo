@@ -140,12 +140,24 @@ if st.session_state.article and topic.strip():
             use_container_width=True
         )
 
-    # 智能配图
+       # 智能配图
     st.subheader("🖼️ 文章智能配图")
     if st.button("获取一张高质量封面图"):
         with st.spinner("正在寻找配图…"):
             try:
-                img_url = f"https://source.unsplash.com/800x400/?{topic},writing"
-                st.image(img_url, caption=f"与「{topic}」相关的配图", use_column_width=True)
+                # 使用 LoremFlickr 的免费高清图源 (更稳定)
+                # 添加一个随机数防止缓存，避免每次都是同一张图
+                import random
+                random_num = random.randint(1, 1000)
+                # 提取主题中的前几个字作为搜索词，提高相关性
+                search_keyword = topic[:10] 
+                img_url = f"https://loremflickr.com/800/400/{search_keyword}?lock={random_num}"
+                
+                # 尝试下载图片，如果失败会直接抛出错误
+                response = requests.get(img_url, timeout=10)
+                response.raise_for_status() 
+                
+                # 显示图片
+                st.image(response.content, caption=f"与「{topic}」相关的配图", use_column_width=True)
             except Exception as e:
-                st.error(f"获取图片失败，请重试。错误: {e}")
+                st.error(f"获取图片失败，可能是网络超时，请重试。详细错误: {e}")
