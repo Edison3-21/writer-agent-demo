@@ -8,7 +8,7 @@ from docx import Document
 st.set_page_config(page_title="宋楚瑶 · 自媒体写作助手", page_icon="✍️", layout="wide")
 
 st.title("✍️ 宋楚瑶 · 自媒体写作助手")
-st.caption("输入主题 → 生成大纲 → 扩写正文 → 标题候选，支持修改润色、双语翻译与文档导出。")
+st.caption("输入主题 → 生成大纲 → 扩写正文 → 标题候选，支持修改润色、双语翻译、文档导出与智能配图。")
 
 # ---------- 侧边栏 ----------
 with st.sidebar:
@@ -140,24 +140,53 @@ if st.session_state.article and topic.strip():
             use_container_width=True
         )
 
-       # 智能配图
+    # 智能配图（Unsplash 官方 API）
     st.subheader("🖼️ 文章智能配图")
     if st.button("获取一张高质量封面图"):
         with st.spinner("正在寻找配图…"):
             try:
-                # 使用 LoremFlickr 的免费高清图源 (更稳定)
-                # 添加一个随机数防止缓存，避免每次都是同一张图
-                import random
-                random_num = random.randint(1, 1000)
-                # 提取主题中的前几个字作为搜索词，提高相关性
-                search_keyword = topic[:10] 
-                img_url = f"https://loremflickr.com/800/400/{search_keyword}?lock={random_num}"
-                
-                # 尝试下载图片，如果失败会直接抛出错误
-                response = requests.get(img_url, timeout=10)
-                response.raise_for_status() 
-                
-                # 显示图片
-                st.image(response.content, caption=f"与「{topic}」相关的配图", use_column_width=True)
+                # 从 Streamlit Secrets 读取 Access Key
+                unsplash_key = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
+                if not unsplash_key:
+                    st.error("未配置 Unsplash Access Key，请在 Secrets 中添加 UNSPLASH_ACCESS_KEY")
+                else:
+                    headers = {"Authorization": f"Client-ID {unsplash_key}"}
+                    # 用文章主题作为搜索词，取第一张横向图片
+                    params = {
+                        "query": topic,
+                        "per_page": 1,
+                        "orientation": "landscape",
+                        "content_filter": "high"
+                    }
+                    resp = requests.get(
+                        "https://api.unsplash.com/search/photos",
+                        headers=headers,
+                        params=params,
+                        timeout=15
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                    results = data.get("results", [])
+                    if not results:
+                        st.warning(f"没有找到与「{topic}」相关的图片，试试换个主题关键词。")
+                    else:
+                        photo = results[0]
+                        img_url = photo["urls"]["regular"]
+                        # 按 Unsplash 规范触发下载事件
+                        try:
+                            requests.get(
+                                photo["links"]["download_location"],
+                                headers=headers,
+                                timeout=5
+                            )
+                        except Exception:
+                            pass
+
+                        st.image(img_url, caption=f"与「{topic}」相关的配图", use_column_width=True)
+                        # 按规范标注摄影师与来源
+                        photographer = photo["user"]["name"]
+                        profile_link = photo["user"]["links"]["html"]
+                        st.caption(f"Photo by [{photographer}]({profile_link}) on Unsplash")
             except Exception as e:
-                st.error(f"获取图片失败，可能是网络超时，请重试。详细错误: {e}")
+                st.error(f"获取图片失败：{e}")
