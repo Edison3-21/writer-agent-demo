@@ -1,7 +1,7 @@
 -i https://pypi.tuna.tsinghua.edu.cn/simple
 streamlit
-pandas==2.2.3
-numpy==1.26.4
+pandas
+numpy
 modelscope-agent
 dashscope
 python-dotenv
