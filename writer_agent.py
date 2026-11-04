@@ -3,9 +3,13 @@
 基于 ModelScope-Agent RolePlay，角色模板参考 PPT Ch5 §1 “小唐”设定。
 """
 import os
+import streamlit as st  # <--- 加上这一行
 from dotenv import load_dotenv
 from modelscope_agent.agents.role_play import RolePlay
 
+# 加上下面这三行！
+if "DASHSCOPE_API_KEY" in st.secrets:
+    os.environ["DASHSCOPE_API_KEY"] = st.secrets["DASHSCOPE_API_KEY"]
 load_dotenv()
 
 BASE_ROLE = (
