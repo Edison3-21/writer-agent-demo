@@ -9,3 +9,4 @@ langchain==0.0.267
 langchain-community==0.0.10
 python-docx
 requests
+Pillow
