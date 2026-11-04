@@ -166,56 +166,59 @@ if st.session_state.article and topic.strip():
         doc.save(bio)
         st.download_button("下载 Word (.docx)", data=bio.getvalue(), file_name=f"{topic}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
 
-            # 生成 PPT（终极稳定·图文混排版）
+          # 生成 PPT（左图右文·终极防黑版）
     with col3:
         if st.button("生成并下载 PPT (.pptx)"):
             with st.spinner("正在为您制作 PPT..."):
                 try:
-                    # 1. 尝试获取图片（直接用网页端已经跑通的逻辑）
                     unsplash_key = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
-                    # 因为中文搜索效果差，统一用搜图关键词
+                    # 统一用英文搜图
                     search_query = topic if topic.isascii() else "nature landscape"
                     bg_image_data = get_unsplash_image(search_query, unsplash_key) if unsplash_key else None
 
                     prs = Presentation()
                     slide_width = prs.slide_width
                     slide_height = prs.slide_height
+                    
+                    # 左半部分宽度
+                    left_width = int(slide_width * 0.45)
 
-                    # 辅助函数：根据是否有图来设置背景
-                    def apply_background(slide, has_image):
-                        if has_image:
-                            # 有图：铺底 + 半透明黑遮罩
-                            slide.shapes.add_picture(io.BytesIO(bg_image_data), 0, 0, width=slide_width, height=slide_height)
-                            mask = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
-                            mask.fill.solid()
-                            mask.fill.fore_color.rgb = RGBColor(0, 0, 0)
-                            mask.fill.transparency = 0.6  # 60% 遮罩，保证文字清晰
-                            mask.line.fill.background()
+                    def create_slide(is_title=False):
+                        slide = prs.slides.add_slide(prs.slide_layouts[6])
+                        if bg_image_data:
+                            # 左侧插入图片 (只占左边 45%)
+                            slide.shapes.add_picture(io.BytesIO(bg_image_data), 0, 0, width=left_width, height=slide_height)
+                            # 右侧加一个深灰色色块作为背景（高级感）
+                            right_bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left_width, 0, slide_width - left_width, slide_height)
+                            right_bg.fill.solid()
+                            right_bg.fill.fore_color.rgb = RGBColor(30, 30, 30) # 深灰色
+                            right_bg.line.fill.background()
                         else:
-                            # 没图：强制纯白底
+                            # 如果没图，用白色铺满
                             bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
                             bg.fill.solid()
                             bg.fill.fore_color.rgb = RGBColor(255, 255, 255)
                             bg.line.fill.background()
+                        return slide
 
                     # --- 1. 封面页 ---
-                    title_slide = prs.slides.add_slide(prs.slide_layouts[6])
-                    apply_background(title_slide, bg_image_data is not None)
-                    
-                    txBox = title_slide.shapes.add_textbox(Inches(1), Inches(2.5), slide_width - Inches(2), Inches(2))
+                    title_slide = create_slide(is_title=True)
+                    # 文字在右侧深色区域居中
+                    txBox = title_slide.shapes.add_textbox(left_width + Inches(0.5), Inches(2.5), slide_width - left_width - Inches(1), Inches(2))
                     tf = txBox.text_frame
                     p = tf.add_paragraph()
                     p.text = topic
-                    p.font.size = Pt(44)
+                    p.font.size = Pt(40)
                     p.font.bold = True
                     p.font.color.rgb = RGBColor(255, 255, 255) if bg_image_data else RGBColor(0, 0, 0)
-                    p.alignment = PP_ALIGN.CENTER
+                    p.alignment = PP_ALIGN.LEFT
                     
                     p2 = tf.add_paragraph()
                     p2.text = "由宋楚瑶 AI 智能生成"
-                    p2.font.size = Pt(24)
-                    p2.font.color.rgb = RGBColor(220, 220, 220) if bg_image_data else RGBColor(100, 100, 100)
-                    p2.alignment = PP_ALIGN.CENTER
+                    p2.font.size = Pt(20)
+                    p2.font.color.rgb = RGBColor(180, 180, 180) if bg_image_data else RGBColor(100, 100, 100)
+                    p2.alignment = PP_ALIGN.LEFT
+                    p2.space_before = Pt(20)
 
                     # --- 2. 内容页 ---
                     if st.session_state.outline:
@@ -230,29 +233,26 @@ if st.session_state.article and topic.strip():
                             is_h1 = (line[0].isdigit() and '.' in line[:3]) or line.startswith(('一、', '二、', '三、', '四、', '五、'))
                             
                             if is_h1:
-                                current_slide = prs.slides.add_slide(prs.slide_layouts[6])
-                                apply_background(current_slide, bg_image_data is not None)
-                                
-                                text_box = current_slide.shapes.add_textbox(Inches(0.5), Inches(0.5), slide_width - Inches(1), slide_height - Inches(1))
+                                current_slide = create_slide(is_title=False)
+                                text_box = current_slide.shapes.add_textbox(left_width + Inches(0.5), Inches(0.5), slide_width - left_width - Inches(1), slide_height - Inches(1))
                                 tf = text_box.text_frame
                                 p = tf.add_paragraph()
                                 p.text = line
-                                p.font.size = Pt(36)
+                                p.font.size = Pt(32)
                                 p.font.bold = True
                                 p.font.color.rgb = RGBColor(255, 255, 255) if bg_image_data else RGBColor(0, 0, 0)
                             elif current_slide is not None and text_box is not None:
                                 p = text_box.text_frame.add_paragraph()
                                 p.text = "• " + line
-                                p.font.size = Pt(24)
+                                p.font.size = Pt(20)
                                 p.font.color.rgb = RGBColor(220, 220, 220) if bg_image_data else RGBColor(50, 50, 50)
                                 p.space_before = Pt(12)
                     
                     ppt_bio = io.BytesIO()
                     prs.save(ppt_bio)
                     
-                    # 提示状态
                     if bg_image_data:
-                        st.success("✅ 带背景图的 PPT 生成成功！")
+                        st.success("✅ 左图右文高级 PPT 生成成功！")
                     else:
                         st.warning("⚠️ 未获取到背景图，已生成纯白底 PPT。")
                         
