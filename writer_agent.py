@@ -80,3 +80,10 @@ class WriterAgent:
             "直接输出修改后的完整内容，不要解释。"
         )
         return self._run(prompt)
+            def translate_to_english(self, text: str) -> str:
+        """将文章翻译成地道的英文。"""
+        prompt = (
+            f"请将以下文章翻译成地道、流畅的英文，保持原有的段落结构：\n\n{text}\n\n"
+            "直接输出翻译后的英文内容，不要任何解释。"
+        )
+        return self._run(prompt)
