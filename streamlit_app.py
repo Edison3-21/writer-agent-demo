@@ -166,37 +166,47 @@ if st.session_state.article and topic.strip():
         doc.save(bio)
         st.download_button("下载 Word (.docx)", data=bio.getvalue(), file_name=f"{topic}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
 
-    # 生成 PPT
+        # 生成 PPT
     with col3:
         if st.button("生成并下载 PPT (.pptx)"):
             with st.spinner("正在为您制作精美 PPT..."):
                 try:
+                    # 1. 尝试获取图片
                     unsplash_key = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
-                    bg_image_data = get_unsplash_image(topic, unsplash_key) if unsplash_key else None
+                    if not unsplash_key:
+                        st.warning("⚠️ 警告：未在 Secrets 中配置 UNSPLASH_ACCESS_KEY，将生成纯白背景 PPT。")
                     
+                    # 由于 Unsplash 对中文支持不好，如果是中文主题，尝试用通用的 "nature" 代替
+                    search_query = topic if topic.isascii() else "nature landscape"
+                    bg_image_data = get_unsplash_image(search_query, unsplash_key) if unsplash_key else None
+                    
+                    if bg_image_data is None and unsplash_key:
+                        st.info("ℹ️ 未找到与主题精准匹配的图片，已自动降级为纯白背景。")
+
                     prs = Presentation()
                     slide_width = prs.slide_width
                     slide_height = prs.slide_height
 
-                    def set_background_and_text(slide, is_title=False):
-                        # 如果有图片，插入背景并加遮罩
-                        if bg_image_data:
+                    # 定义一个统一设置背景和文字颜色的函数
+                    def apply_background(slide, has_image):
+                        if has_image:
+                            # 有图：铺满背景，加黑色半透明遮罩
                             slide.shapes.add_picture(io.BytesIO(bg_image_data), 0, 0, width=slide_width, height=slide_height)
                             mask = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
                             mask.fill.solid()
                             mask.fill.fore_color.rgb = RGBColor(0, 0, 0)
-                            mask.fill.transparency = 0.4 if is_title else 0.6
+                            mask.fill.transparency = 0.5  # 50% 透明
                             mask.line.fill.background()
                         else:
-                            # 没图片就给个白底，防止黑屏
+                            # 没图：强制画一个纯白矩形当背景
                             bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
                             bg.fill.solid()
                             bg.fill.fore_color.rgb = RGBColor(255, 255, 255)
                             bg.line.fill.background()
 
                     # --- 1. 封面页 ---
-                    title_slide = prs.slides.add_slide(prs.slide_layouts[6]) 
-                    set_background_and_text(title_slide, is_title=True)
+                    title_slide = prs.slides.add_slide(prs.slide_layouts[6])
+                    apply_background(title_slide, bg_image_data is not None)
                     
                     txBox = title_slide.shapes.add_textbox(Inches(1), Inches(2.5), slide_width - Inches(2), Inches(2))
                     tf = txBox.text_frame
@@ -204,6 +214,7 @@ if st.session_state.article and topic.strip():
                     p.text = topic
                     p.font.size = Pt(44)
                     p.font.bold = True
+                    # 有图用白字，没图用黑字
                     p.font.color.rgb = RGBColor(255, 255, 255) if bg_image_data else RGBColor(0, 0, 0)
                     p.alignment = PP_ALIGN.CENTER
                     
@@ -222,12 +233,12 @@ if st.session_state.article and topic.strip():
                             line = line.strip()
                             if not line: continue
                             
-                            # 判断是不是一级标题 (如 "1. 引言" 或 "一、引言")
                             is_h1 = (line[0].isdigit() and '.' in line[:3]) or line.startswith(('一、', '二、', '三、', '四、', '五、'))
                             
                             if is_h1:
                                 current_slide = prs.slides.add_slide(prs.slide_layouts[6])
-                                set_background_and_text(current_slide, is_title=False)
+                                apply_background(current_slide, bg_image_data is not None)
+                                
                                 text_box = current_slide.shapes.add_textbox(Inches(0.5), Inches(0.5), slide_width - Inches(1), slide_height - Inches(1))
                                 tf = text_box.text_frame
                                 p = tf.add_paragraph()
@@ -244,7 +255,7 @@ if st.session_state.article and topic.strip():
                     
                     ppt_bio = io.BytesIO()
                     prs.save(ppt_bio)
-                    st.success("PPT 生成成功！请点击下方按钮下载。")
+                    st.success("✅ PPT 生成成功！")
                     st.download_button("⬇️ 点击下载 PPT", data=ppt_bio.getvalue(), file_name=f"{topic}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation", use_container_width=True)
                 except Exception as e:
                     st.error(f"生成 PPT 失败：{e}")
