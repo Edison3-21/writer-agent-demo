@@ -1,0 +1,8 @@
+modelscope-agent
+dashscope
+streamlit
+python-dotenv
+langchain==0.0.267
+langchain-community==0.0.10
+pandas>=2.2,<3.0
+numpy>=2.0.2
