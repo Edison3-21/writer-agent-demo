@@ -3,6 +3,7 @@ import streamlit as st
 from writer_agent import WriterAgent
 import io
 import requests
+import random
 from docx import Document
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -12,12 +13,14 @@ from pptx.enum.text import PP_ALIGN
 from PIL import Image
 
 # ==========================================
-# 辅助函数：从 Unsplash 获取图片并强制处理成标准 RGB
+# 辅助函数：从 Unsplash 获取随机图片
 # ==========================================
 def get_unsplash_image(topic, unsplash_key):
+    if not unsplash_key:
+        return None
     headers = {"Authorization": f"Client-ID {unsplash_key}"}
-    # 增加 orientation 和 content_filter，尽量搜到好看的高清横图
-    params = {"query": topic, "per_page": 1, "orientation": "landscape", "content_filter": "high"}
+    # 随机取 1-10 页中的某一张，避免每次都一样
+    params = {"query": topic, "per_page": 1, "page": random.randint(1, 10), "orientation": "landscape", "content_filter": "high"}
     try:
         resp = requests.get("https://api.unsplash.com/search/photos", headers=headers, params=params, timeout=10)
         resp.raise_for_status()
@@ -25,17 +28,15 @@ def get_unsplash_image(topic, unsplash_key):
         if results:
             img_url = results[0]["urls"]["regular"]
             img_data = requests.get(img_url, timeout=10).content
-            
-            # 使用 Pillow 转换图片为 RGB，防止 pptx 报错
+            # 强制转为标准 RGB 防止 pptx 报错
             img = Image.open(io.BytesIO(img_data))
             if img.mode != 'RGB':
                 img = img.convert('RGB')
-                
             output = io.BytesIO()
             img.save(output, format="JPEG", quality=90)
             return output.getvalue()
     except Exception as e:
-        print(f"Image fetch error: {e}")
+        print(f"Image error: {e}")
         return None
     return None
 
@@ -166,100 +167,105 @@ if st.session_state.article and topic.strip():
         doc.save(bio)
         st.download_button("下载 Word (.docx)", data=bio.getvalue(), file_name=f"{topic}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
 
-          # 生成 PPT（左图右文·终极防黑版）
+    # 生成 PPT（正文智能提取·左图右文版）
     with col3:
         if st.button("生成并下载 PPT (.pptx)"):
-            with st.spinner("正在为您制作 PPT..."):
+            with st.spinner("正在提取正文并排版 PPT..."):
                 try:
                     unsplash_key = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
-                    # 统一用英文搜图
                     search_query = topic if topic.isascii() else "nature landscape"
-                    bg_image_data = get_unsplash_image(search_query, unsplash_key) if unsplash_key else None
 
                     prs = Presentation()
                     slide_width = prs.slide_width
                     slide_height = prs.slide_height
-                    
-                    # 左半部分宽度
                     left_width = int(slide_width * 0.45)
 
-                    def create_slide(is_title=False):
+                    def create_slide():
                         slide = prs.slides.add_slide(prs.slide_layouts[6])
-                        if bg_image_data:
-                            # 左侧插入图片 (只占左边 45%)
-                            slide.shapes.add_picture(io.BytesIO(bg_image_data), 0, 0, width=left_width, height=slide_height)
-                            # 右侧加一个深灰色色块作为背景（高级感）
+                        img_data = get_unsplash_image(search_query, unsplash_key)
+                        
+                        if img_data:
+                            slide.shapes.add_picture(io.BytesIO(img_data), 0, 0, width=left_width, height=slide_height)
                             right_bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left_width, 0, slide_width - left_width, slide_height)
                             right_bg.fill.solid()
-                            right_bg.fill.fore_color.rgb = RGBColor(30, 30, 30) # 深灰色
+                            right_bg.fill.fore_color.rgb = RGBColor(30, 30, 30)
                             right_bg.line.fill.background()
                         else:
-                            # 如果没图，用白色铺满
                             bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
                             bg.fill.solid()
                             bg.fill.fore_color.rgb = RGBColor(255, 255, 255)
                             bg.line.fill.background()
-                        return slide
+                        return slide, (img_data is not None)
 
                     # --- 1. 封面页 ---
-                    title_slide = create_slide(is_title=True)
-                    # 文字在右侧深色区域居中
+                    title_slide, has_img = create_slide()
                     txBox = title_slide.shapes.add_textbox(left_width + Inches(0.5), Inches(2.5), slide_width - left_width - Inches(1), Inches(2))
+                    txBox.text_frame.word_wrap = True
                     tf = txBox.text_frame
                     p = tf.add_paragraph()
                     p.text = topic
-                    p.font.size = Pt(40)
+                    p.font.size = Pt(36)
                     p.font.bold = True
-                    p.font.color.rgb = RGBColor(255, 255, 255) if bg_image_data else RGBColor(0, 0, 0)
+                    p.font.color.rgb = RGBColor(255, 255, 255) if has_img else RGBColor(0, 0, 0)
                     p.alignment = PP_ALIGN.LEFT
                     
                     p2 = tf.add_paragraph()
                     p2.text = "由宋楚瑶 AI 智能生成"
                     p2.font.size = Pt(20)
-                    p2.font.color.rgb = RGBColor(180, 180, 180) if bg_image_data else RGBColor(100, 100, 100)
+                    p2.font.color.rgb = RGBColor(180, 180, 180) if has_img else RGBColor(100, 100, 100)
                     p2.alignment = PP_ALIGN.LEFT
                     p2.space_before = Pt(20)
 
-                    # --- 2. 内容页 ---
-                    if st.session_state.outline:
-                        outline_lines = st.session_state.outline.split('\n')
-                        current_slide = None
-                        text_box = None
+                    # --- 2. 内容页（从正文中智能提取） ---
+                    article_text = st.session_state.article.strip()
+                    if article_text:
+                        # 按换行符切分正文，过滤掉空行和只有标点的行
+                        paragraphs = [p.strip() for p in article_text.split('\n') if len(p.strip()) > 5]
                         
-                        for line in outline_lines:
-                            line = line.strip()
-                            if not line: continue
+                        # 把段落分组，每 3 段作为一页 PPT（避免一页字太多）
+                        chunk_size = 3
+                        for i in range(0, len(paragraphs), chunk_size):
+                            chunk = paragraphs[i:i+chunk_size]
+                            current_slide, has_img = create_slide()
                             
-                            is_h1 = (line[0].isdigit() and '.' in line[:3]) or line.startswith(('一、', '二、', '三、', '四、', '五、'))
+                            text_box = current_slide.shapes.add_textbox(left_width + Inches(0.5), Inches(0.5), slide_width - left_width - Inches(1), slide_height - Inches(1))
+                            text_box.text_frame.word_wrap = True
+                            tf = text_box.text_frame
                             
-                            if is_h1:
-                                current_slide = create_slide(is_title=False)
-                                text_box = current_slide.shapes.add_textbox(left_width + Inches(0.5), Inches(0.5), slide_width - left_width - Inches(1), slide_height - Inches(1))
-                                tf = text_box.text_frame
-                                p = tf.add_paragraph()
-                                p.text = line
-                                p.font.size = Pt(32)
-                                p.font.bold = True
-                                p.font.color.rgb = RGBColor(255, 255, 255) if bg_image_data else RGBColor(0, 0, 0)
-                            elif current_slide is not None and text_box is not None:
-                                p = text_box.text_frame.add_paragraph()
-                                p.text = "• " + line
-                                p.font.size = Pt(20)
-                                p.font.color.rgb = RGBColor(220, 220, 220) if bg_image_data else RGBColor(50, 50, 50)
-                                p.space_before = Pt(12)
-                    
+                            # 取这一段的第一句话或者前 15 个字作为 PPT 的标题
+                            first_para = chunk[0]
+                            title_text = first_para.split('。')[0]
+                            if len(title_text) > 15: 
+                                title_text = title_text[:15] + "..."
+                            
+                            # 插入标题
+                            p_title = tf.add_paragraph()
+                            p_title.text = title_text
+                            p_title.font.size = Pt(28)
+                            p_title.font.bold = True
+                            p_title.font.color.rgb = RGBColor(255, 255, 255) if has_img else RGBColor(0, 0, 0)
+                            p_title.space_after = Pt(15)
+                            
+                            # 插入正文段落
+                            for para in chunk:
+                                # 如果段落太长，截断防止溢出
+                                if len(para) > 120:
+                                    para = para[:120] + "..."
+                                
+                                p_body = tf.add_paragraph()
+                                p_body.text = para
+                                p_body.font.size = Pt(16) # 字号调小，塞下更多字
+                                p_body.font.color.rgb = RGBColor(200, 200, 200) if has_img else RGBColor(50, 50, 50)
+                                p_body.space_before = Pt(12)
+
                     ppt_bio = io.BytesIO()
                     prs.save(ppt_bio)
                     
-                    if bg_image_data:
-                        st.success("✅ 左图右文高级 PPT 生成成功！")
-                    else:
-                        st.warning("⚠️ 未获取到背景图，已生成纯白底 PPT。")
-                        
+                    st.success("✅ 提取正文版 PPT 生成成功！")
                     st.download_button("⬇️ 点击下载 PPT", data=ppt_bio.getvalue(), file_name=f"{topic}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation", use_container_width=True)
                 except Exception as e:
                     st.error(f"生成 PPT 失败：{e}")
-                  
+
     # 网页端展示配图
     st.subheader("🖼️ 文章智能配图")
     if st.button("获取一张高质量封面图"):
@@ -268,7 +274,7 @@ if st.session_state.article and topic.strip():
             if not unsplash_key:
                 st.error("未配置 Unsplash Access Key")
             else:
-                img_data = get_unsplash_image(topic, unsplash_key)
+                img_data = get_unsplash_image(topic if topic.isascii() else "nature landscape", unsplash_key)
                 if img_data:
                     st.image(img_data, caption=f"与「{topic}」相关的配图", use_column_width=True)
                 else:
