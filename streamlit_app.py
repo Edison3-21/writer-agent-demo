@@ -166,39 +166,33 @@ if st.session_state.article and topic.strip():
         doc.save(bio)
         st.download_button("下载 Word (.docx)", data=bio.getvalue(), file_name=f"{topic}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
 
-        # 生成 PPT
+            # 生成 PPT（终极稳定·图文混排版）
     with col3:
         if st.button("生成并下载 PPT (.pptx)"):
-            with st.spinner("正在为您制作精美 PPT..."):
+            with st.spinner("正在为您制作 PPT..."):
                 try:
-                    # 1. 尝试获取图片
+                    # 1. 尝试获取图片（直接用网页端已经跑通的逻辑）
                     unsplash_key = st.secrets.get("UNSPLASH_ACCESS_KEY", "")
-                    if not unsplash_key:
-                        st.warning("⚠️ 警告：未在 Secrets 中配置 UNSPLASH_ACCESS_KEY，将生成纯白背景 PPT。")
-                    
-                    # 由于 Unsplash 对中文支持不好，如果是中文主题，尝试用通用的 "nature" 代替
+                    # 因为中文搜索效果差，统一用搜图关键词
                     search_query = topic if topic.isascii() else "nature landscape"
                     bg_image_data = get_unsplash_image(search_query, unsplash_key) if unsplash_key else None
-                    
-                    if bg_image_data is None and unsplash_key:
-                        st.info("ℹ️ 未找到与主题精准匹配的图片，已自动降级为纯白背景。")
 
                     prs = Presentation()
                     slide_width = prs.slide_width
                     slide_height = prs.slide_height
 
-                    # 定义一个统一设置背景和文字颜色的函数
+                    # 辅助函数：根据是否有图来设置背景
                     def apply_background(slide, has_image):
                         if has_image:
-                            # 有图：铺满背景，加黑色半透明遮罩
+                            # 有图：铺底 + 半透明黑遮罩
                             slide.shapes.add_picture(io.BytesIO(bg_image_data), 0, 0, width=slide_width, height=slide_height)
                             mask = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
                             mask.fill.solid()
                             mask.fill.fore_color.rgb = RGBColor(0, 0, 0)
-                            mask.fill.transparency = 0.5  # 50% 透明
+                            mask.fill.transparency = 0.6  # 60% 遮罩，保证文字清晰
                             mask.line.fill.background()
                         else:
-                            # 没图：强制画一个纯白矩形当背景
+                            # 没图：强制纯白底
                             bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_width, slide_height)
                             bg.fill.solid()
                             bg.fill.fore_color.rgb = RGBColor(255, 255, 255)
@@ -214,7 +208,6 @@ if st.session_state.article and topic.strip():
                     p.text = topic
                     p.font.size = Pt(44)
                     p.font.bold = True
-                    # 有图用白字，没图用黑字
                     p.font.color.rgb = RGBColor(255, 255, 255) if bg_image_data else RGBColor(0, 0, 0)
                     p.alignment = PP_ALIGN.CENTER
                     
@@ -229,6 +222,7 @@ if st.session_state.article and topic.strip():
                         outline_lines = st.session_state.outline.split('\n')
                         current_slide = None
                         text_box = None
+                        
                         for line in outline_lines:
                             line = line.strip()
                             if not line: continue
@@ -255,11 +249,17 @@ if st.session_state.article and topic.strip():
                     
                     ppt_bio = io.BytesIO()
                     prs.save(ppt_bio)
-                    st.success("✅ PPT 生成成功！")
+                    
+                    # 提示状态
+                    if bg_image_data:
+                        st.success("✅ 带背景图的 PPT 生成成功！")
+                    else:
+                        st.warning("⚠️ 未获取到背景图，已生成纯白底 PPT。")
+                        
                     st.download_button("⬇️ 点击下载 PPT", data=ppt_bio.getvalue(), file_name=f"{topic}.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation", use_container_width=True)
                 except Exception as e:
                     st.error(f"生成 PPT 失败：{e}")
-
+                  
     # 网页端展示配图
     st.subheader("🖼️ 文章智能配图")
     if st.button("获取一张高质量封面图"):
